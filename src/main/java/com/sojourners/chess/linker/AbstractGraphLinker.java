@@ -131,8 +131,12 @@ public abstract class AbstractGraphLinker implements GraphLinker, Runnable {
                     }
 
                     Action action = compareBoard(board2, callBack.getEngineBoard(), isReverse, callBack.isWatchMode());
+                    // 快速模式：跳过动画确认，直接响应
                     if (prop.isLinkAnimation() && needConfirm(board2, callBack.getEngineBoard(), action)) {
                         boolean f = false;
+                        int confirmAttempts = 0;
+                        int maxConfirmAttempts = 3; // 限制确认次数，避免在快棋中浪费时间
+                        
                         do {
                             char[][] tmp = board1;
                             board1 = board2;
@@ -148,6 +152,12 @@ public abstract class AbstractGraphLinker implements GraphLinker, Runnable {
                             } catch (Exception e) {
                                 e.printStackTrace();
                                 f = true;
+                                break;
+                            }
+                            
+                            confirmAttempts++;
+                            if (confirmAttempts >= maxConfirmAttempts) {
+                                // 快棋模式：达到最大确认次数后直接使用当前识别结果
                                 break;
                             }
                         } while (!isSame(board1, board2));
