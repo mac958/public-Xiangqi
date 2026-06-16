@@ -55,6 +55,10 @@ public abstract class AbstractGraphLinker implements GraphLinker, Runnable {
     
     // 窗口句柄（用于后台点击）
     protected WinDef.HWND hwnd;
+    
+    // 识别失败计数器（用于强制刷新）
+    private int noChangeCount = 0;
+    private static final int FORCE_REFRESH_THRESHOLD = 5; // 连续5次无变化后强制重新识别（降低阈值）
 
     public AbstractGraphLinker(LinkerCallBack callBack) throws AWTException {
         this.callBack = callBack;
@@ -91,6 +95,39 @@ public abstract class AbstractGraphLinker implements GraphLinker, Runnable {
         }
         return true;
     }
+    
+    /**
+     * 打印两个棋盘的差异（调试用）
+     */
+    private void printBoardDiff(char[][] newBoard, char[][] oldBoard) {
+        System.out.println("=== 棋盘变化详情 ===");
+        int diffCount = 0;
+        for (int i = 0; i < 10; i++) {
+            for (int j = 0; j < 9; j++) {
+                if (newBoard[i][j] != oldBoard[i][j]) {
+                    diffCount++;
+                    System.out.println(String.format("位置[%d,%d]: '%c' -> '%c'", 
+                        i, j, oldBoard[i][j], newBoard[i][j]));
+                }
+            }
+        }
+        System.out.println("总共 " + diffCount + " 个位置发生变化");
+        System.out.println("==================");
+    }
+    
+    /**
+     * 打印完整棋盘状态（调试用）
+     */
+    private void printBoard(char[][] board, String title) {
+        System.out.println("=== " + title + " ===");
+        for (int i = 0; i < 10; i++) {
+            for (int j = 0; j < 9; j++) {
+                System.out.print(board[i][j] + " ");
+            }
+            System.out.println();
+        }
+        System.out.println("==================");
+    }
 
     public void pause() {
         this.pause = true;
@@ -115,6 +152,16 @@ public abstract class AbstractGraphLinker implements GraphLinker, Runnable {
                 if (!callBack.isThinking() && !pause) {
 
                     if (!findChessBoard(board2)) {
+                        System.out.println("棋盘识别失败，跳过本次扫描");
+                        noChangeCount++;
+                        // 识别失败时也触发强制刷新
+                        if (noChangeCount >= FORCE_REFRESH_THRESHOLD) {
+                            System.out.println("识别失败次数过多，强制重新初始化棋盘");
+                            noChangeCount = 0;
+                            if (!initChessBoard()) {
+                                sleep(500);
+                            }
+                        }
                         continue;
                     }
 
@@ -127,8 +174,28 @@ public abstract class AbstractGraphLinker implements GraphLinker, Runnable {
                     }
 
                     if (isSame(board2, callBack.getEngineBoard())) {
+                        // 识别结果和引擎棋盘相同，无变化
+                        noChangeCount++;
+                        
+                        // 快棋模式：如果连续多次无变化，可能是识别失败，强制重新初始化
+                        if (noChangeCount >= FORCE_REFRESH_THRESHOLD) {
+                            System.out.println("警告：连续" + noChangeCount + "次无变化，可能识别失败，强制刷新棋盘...");
+                            noChangeCount = 0;
+                            // 强制重新初始化棋盘位置
+                            if (!initChessBoard()) {
+                                sleep(500);
+                                continue;
+                            }
+                        }
                         continue;
                     }
+                    
+                    // 检测到变化，重置计数器
+                    noChangeCount = 0;
+                    
+                    // 检测到棋盘变化，输出调试信息
+                    System.out.println("检测到棋盘变化！准备分析...");
+                    printBoardDiff(board2, callBack.getEngineBoard());
 
                     Action action = compareBoard(board2, callBack.getEngineBoard(), isReverse, callBack.isWatchMode());
                     // 快速模式：跳过动画确认，直接响应
